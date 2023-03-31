@@ -26,17 +26,16 @@ import numpy as np
 class ServerConnection:
     def __init__(self):
         self.__cryptKeyFile = "keyFile.txt"
-        self.__serverInfo = ("137.99.130.184", 5984)    # Need actual values
+        self.__serverInfo = ("127.0.0.1", 5984)    # Need actual values
         self.__ModelInfo= ("../poisonous_plant_classifier_model", "modelFile")   # Path and file of model
         # __AIConverter = None
         # self.ModelConvert(__AIConverter)
         self.__AIModel = tf.keras.models.load_model(filepath=self.GetSavedModelPath())
-        self.__cryptS = fer(self.GetKey())
+        self.__cryptS=fer(self.GetKey())
         self.__buffSize = 10000
         self.__numQueueClients = 12
         self.__accuracyThreshold = .7
         self.__timeoutSeconds = 100
-        self.__classOptions = ['Atlantic_Poison_Oak', 'Eastern_Poison_Ivy', 'Not', 'Poison_Sumac']
       
     # Main loop
     def Run(self):
@@ -57,23 +56,20 @@ class ServerConnection:
         while True:
             sel = select.select([conn], [], [], self.GetTimeoutDelay())
             if sel[0]:
-                try:
-                    receivedInfo = self.DecryptMessage(conn.recv(self.GetBufferSize()))
-                except:
-                    print("Failed to decrypt.")
+                receivedInfo = self.DecryptMessage(conn.recv(self.GetBufferSize()))
             else:
                 break
             # # Receive the size of the image file
             # image_size = int(client_socket.recv(1024).decode())
             # Receive the image data
-            image_data = receivedInfo.bit[2:]
+            image_data = receivedInfo.bin[2:]
             # while len(image_data) < image_size:
             #     image_data += client_socket.recv(1024)
 
             # # Write the image data to a file
             # with open('received_image.jpg', 'wb') as f:
             #     f.write(image_data)
-            resType = int(receivedInfo.bit[:1])
+            resType = int(receivedInfo.bin[:1])
             # # Send an acknowledgment to the client
             # client_socket.sendall(b'ACK')
             print(resType," : ",receivedInfo)
@@ -87,15 +83,15 @@ class ServerConnection:
 
                 # Invoke resend of image (accuracy too low)
                 if imgStats[1] < self.GetAccThresh():
-                    conn.sendall(self.EncryptMessage(b'01'))
+                    conn.sendall(self.EncryptMessage(b'01'+self.CommunicationEndCharacter()))
                 # Sends type of plant and message type 2
                 else:
                     # imgToSend = imgStats[0]
                     predAcc = imgStats[0]
                     predPlant= imgStats[1]
                     # conn.sendall(self.EncryptMessage(b'10'+predPlant+ predAcc+ imgToSend+self.CommunicationEndCharacter()))
-                    conn.sendall(self.EncryptMessage(b'10'+self.GetSeperator()+predPlant+self.GetSeperator()+ predAcc))
-        # conn.sendall(self.EncryptMessage(b'00'+self.CommunicationEndCharacter()))
+                    conn.sendall(self.EncryptMessage(b'10'+self.GetSeperator()+predPlant+self.GetSeperator()+ predAcc+self.CommunicationEndCharacter()))
+        conn.sendall(self.EncryptMessage(b'00'+self.CommunicationEndCharacter()))
         conn.close()
         print(f"Connection terminated with client, {addr}")
 
@@ -118,16 +114,10 @@ class ServerConnection:
         img_array = tf.expand_dims(img_array, 0) # Create a batch
 
         predictions = self.__AIModel.predict(img_array)
-        # score = tf.nn.softmax(predictions[0])
-        score = np.max(predictions[0])
-        predicitonsIndex = np.argmax(predictions[0])
-        classList = self.GetClassOptList()
-        predictedPlant = classList[predicitonsIndex]
+        score = tf.nn.softmax(predictions[0])
 
         # return ("image if possible",np.max(score),predictions)
-
-        # return (np.max(score),predictedPlant)
-        return (score,predictedPlant)
+        return (np.max(score),predictions)
     
     def GetKey(self):
         with open(self.GetKeyFileName(), "rb") as f:
@@ -173,15 +163,11 @@ class ServerConnection:
     
     def CommunicationEndCharacter(self):
         return "0/"
-    
     def GetSeperator(self):
         return ","
     
     def GetTimeoutDelay(self):
         return self.__timeoutSeconds
-
-    def GetClassOptList(self):
-        return self.__classOptions
 
 loop = ServerConnection()
 loop.Run()
